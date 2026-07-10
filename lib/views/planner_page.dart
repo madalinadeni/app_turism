@@ -3,6 +3,7 @@ import '../sabloane/planner_sablon.dart';
 import '../service/planner_service.dart';
 import 'create_planner_page.dart';
 import 'planner_details_page.dart';
+import 'generator_itinerar_ai_page.dart';
 
 class PlannerPage extends StatelessWidget {
   PlannerPage({super.key});
@@ -25,14 +26,43 @@ class PlannerPage extends StatelessWidget {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: const Text('Planificările mele')),
-      floatingActionButton: FloatingActionButton(
-        onPressed: () {
-          Navigator.push(
-            context,
-            MaterialPageRoute(builder: (_) => const CreatePlannerPage()),
-          );
-        },
-        child: const Icon(Icons.add),
+      floatingActionButton: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          FloatingActionButton.small(
+            heroTag: 'generator_itinerar_ai',
+            tooltip: 'Generează itinerar cu AI',
+            onPressed: () async {
+              final salvat = await Navigator.push<bool>(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => const GeneratorItinerarAiPage(),
+                ),
+              );
+
+              if (salvat == true && context.mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Planificarea AI a fost adăugată.'),
+                  ),
+                );
+              }
+            },
+            child: const Icon(Icons.auto_awesome),
+          ),
+          const SizedBox(height: 12),
+          FloatingActionButton(
+            heroTag: 'creare_itinerar_manual',
+            tooltip: 'Creează itinerar manual',
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const CreatePlannerPage()),
+              );
+            },
+            child: const Icon(Icons.add),
+          ),
+        ],
       ),
       body: StreamBuilder<List<PlannerSablon>>(
         stream: _plannerService.getMyPlanners(),
