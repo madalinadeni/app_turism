@@ -5,6 +5,7 @@ import 'package:printing/printing.dart';
 import 'edit_planner_page.dart';
 import '../service/planner_service.dart';
 import '../service/locatie_service.dart';
+import '../sabloane/itinerar_ai_sablon.dart';
 
 class PlannerDetailsPage extends StatelessWidget {
   final PlannerSablon planner;
@@ -270,8 +271,236 @@ class PlannerDetailsPage extends StatelessWidget {
     );
   }
 
+  String _formateazaNumar(double valoare) {
+    if (valoare == valoare.roundToDouble()) {
+      return valoare.toStringAsFixed(0);
+    }
+
+    return valoare.toStringAsFixed(2);
+  }
+
+  Widget _sectiuneItinerarAi(BuildContext context, ItinerarAi itinerar) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Card(
+          color: Theme.of(context).colorScheme.primaryContainer,
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Row(
+                  children: [
+                    Icon(Icons.auto_awesome),
+                    SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'Itinerar generat cu AI',
+                        style: TextStyle(
+                          fontSize: 19,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                if (itinerar.rezumat.isNotEmpty) ...[
+                  const SizedBox(height: 12),
+                  Text(itinerar.rezumat),
+                ],
+                const SizedBox(height: 14),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    Chip(
+                      avatar: const Icon(Icons.location_on_outlined, size: 18),
+                      label: Text(itinerar.zona),
+                    ),
+                    Chip(
+                      avatar: const Icon(
+                        Icons.calendar_month_outlined,
+                        size: 18,
+                      ),
+                      label: Text(
+                        itinerar.numarZile == 1
+                            ? '1 zi'
+                            : '${itinerar.numarZile} zile',
+                      ),
+                    ),
+                    Chip(
+                      avatar: const Icon(Icons.payments_outlined, size: 18),
+                      label: Text(
+                        '${_formateazaNumar(itinerar.bugetTotalEstimat)} lei',
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(height: 12),
+        ...itinerar.zile.map((zi) => _cardZiAi(context, zi)),
+        if (itinerar.sfaturi.isNotEmpty) ...[
+          const SizedBox(height: 4),
+          _cardSfaturiAi(itinerar.sfaturi),
+        ],
+      ],
+    );
+  }
+
+  Widget _cardZiAi(BuildContext context, ZiItinerarAi zi) {
+    return Card(
+      margin: const EdgeInsets.only(bottom: 12),
+      child: ExpansionTile(
+        initiallyExpanded: true,
+        leading: CircleAvatar(child: Text('${zi.zi}')),
+        title: Text(
+          zi.titlu.isEmpty ? 'Ziua ${zi.zi}' : zi.titlu,
+          style: const TextStyle(fontWeight: FontWeight.bold),
+        ),
+        subtitle: Text(
+          '${zi.activitati.length} '
+          '${zi.activitati.length == 1 ? 'activitate' : 'activități'}',
+        ),
+        children: [
+          if (zi.activitati.isEmpty)
+            const Padding(
+              padding: EdgeInsets.all(16),
+              child: Text('Nu există activități pentru această zi.'),
+            )
+          else
+            ...zi.activitati.map(
+              (activitate) => Padding(
+                padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
+                child: Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    border: Border.all(color: Theme.of(context).dividerColor),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            activitate.ora,
+                            style: const TextStyle(fontWeight: FontWeight.bold),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Text(
+                              activitate.numeLocatie,
+                              style: const TextStyle(
+                                fontSize: 17,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      if (activitate.categorie.isNotEmpty) ...[
+                        const SizedBox(height: 6),
+                        Text(
+                          activitate.categorie,
+                          style: TextStyle(
+                            color: Theme.of(context).colorScheme.primary,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+                      if (activitate.motiv.isNotEmpty) ...[
+                        const SizedBox(height: 10),
+                        Text(activitate.motiv),
+                      ],
+                      const SizedBox(height: 12),
+                      Wrap(
+                        spacing: 16,
+                        runSpacing: 8,
+                        children: [
+                          Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Icon(Icons.schedule_outlined, size: 18),
+                              const SizedBox(width: 5),
+                              Text(
+                                '${_formateazaNumar(activitate.durataOre)} ore',
+                              ),
+                            ],
+                          ),
+                          Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Icon(Icons.payments_outlined, size: 18),
+                              const SizedBox(width: 5),
+                              Text(
+                                '${_formateazaNumar(activitate.costEstimat)} lei',
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _cardSfaturiAi(List<String> sfaturi) {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Row(
+              children: [
+                Icon(Icons.lightbulb_outline),
+                SizedBox(width: 8),
+                Text(
+                  'Sfaturi pentru excursie',
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            ...sfaturi.map(
+              (sfat) => Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text('• '),
+                    Expanded(child: Text(sfat)),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
+    ItinerarAi? itinerarAi;
+
+    final detaliiAi = planner.detaliiItinerarAi;
+
+    if (planner.generatCuAi && detaliiAi != null) {
+      itinerarAi = ItinerarAi.fromMap(detaliiAi);
+    }
+
     return Scaffold(
       appBar: AppBar(
         title: Text(planner.titlu),
@@ -334,6 +563,11 @@ class PlannerDetailsPage extends StatelessWidget {
             ),
 
             const SizedBox(height: 25),
+
+            if (itinerarAi != null) ...[
+              _sectiuneItinerarAi(context, itinerarAi),
+              const SizedBox(height: 25),
+            ],
 
             const Text(
               'Locații incluse',
