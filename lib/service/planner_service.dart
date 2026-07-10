@@ -2,6 +2,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../sabloane/planner_sablon.dart';
 import 'gamification_service.dart';
+import '../sabloane/itinerar_ai_sablon.dart';
 
 class PlannerService {
   final FirebaseFirestore _db = FirebaseFirestore.instance;
@@ -86,5 +87,65 @@ class PlannerService {
         {'uid': locatieId, 'titlu': titlu},
       ]),
     });
+  }
+
+  Future<String> salveazaItinerarAi(ItinerarAi itinerar) async {
+    final utilizator = _auth.currentUser;
+
+    if (utilizator == null) {
+      throw Exception('Trebuie să fii autentificat pentru a salva itinerarul.');
+    }
+
+    final locatiiUnice = <String, Map<String, dynamic>>{};
+
+    for (final zi in itinerar.zile) {
+      for (final activitate in zi.activitati) {
+        final locatieId = activitate.locatieId.trim();
+
+        if (locatieId.isEmpty) {
+          continue;
+        }
+
+        locatiiUnice[locatieId] = {
+          'uid': locatieId,
+          'titlu': activitate.numeLocatie,
+        };
+      }
+    }
+
+    final locatii = locatiiUnice.values.toList();
+
+    if (locatii.isEmpty) {
+      throw Exception(
+        'Itinerarul generat nu conține locații care pot fi salvate.',
+      );
+    }
+
+    final acum = DateTime.now();
+
+    final dataInceput = DateTime(acum.year, acum.month, acum.day);
+
+    final numarZile = itinerar.numarZile < 1 ? 1 : itinerar.numarZile;
+
+    final dataFinal = dataInceput.add(Duration(days: numarZile - 1));
+
+    final document = await _plannerCollection.add({
+      'titlu': itinerar.titlu,
+      'utilizatorId': utilizator.uid,
+      'creatLa': Timestamp.now(),
+      'dataInceput': Timestamp.fromDate(dataInceput),
+      'dataFinal': Timestamp.fromDate(dataFinal),
+      'locatii': locatii,
+      'generatCuAi': true,
+      'rezumatAi': itinerar.rezumat,
+      'zonaAi': itinerar.zona,
+      'bugetEstimatAi': itinerar.bugetTotalEstimat,
+      'sfaturiAi': itinerar.sfaturi,
+      'detaliiItinerarAi': itinerar.toMap(),
+    });
+
+    await GamificationService().adaugaPuncte(5);
+
+    return document.id;
   }
 }
