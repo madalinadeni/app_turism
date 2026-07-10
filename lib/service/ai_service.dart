@@ -44,4 +44,68 @@ class AiService {
       throw Exception('A apărut o eroare la comunicarea cu AI: $e');
     }
   }
+
+  Future<Map<String, dynamic>> genereazaItinerariu({
+    required String zona,
+    required int zile,
+    required double buget,
+    required String preferinte,
+    required bool cuCopii,
+  }) async {
+    try {
+      final callable = _functions.httpsCallable(
+        'genereazaItinerariu',
+        options: HttpsCallableOptions(timeout: const Duration(seconds: 150)),
+      );
+
+      final rezultat = await callable.call({
+        'zona': zona.trim(),
+        'zile': zile,
+        'buget': buget,
+        'preferinte': preferinte.trim(),
+        'cuCopii': cuCopii,
+      });
+
+      final data = rezultat.data;
+
+      if (data is! Map) {
+        throw Exception('Răspunsul primit pentru itinerar nu este valid.');
+      }
+
+      return Map<String, dynamic>.from(data);
+    } on FirebaseFunctionsException catch (error) {
+      final mesaj = error.message?.trim();
+
+      if (mesaj != null && mesaj.isNotEmpty) {
+        throw Exception(mesaj);
+      }
+
+      switch (error.code) {
+        case 'unauthenticated':
+          throw Exception(
+            'Trebuie să fii autentificat pentru a genera un itinerar.',
+          );
+
+        case 'invalid-argument':
+          throw Exception('Datele introduse pentru itinerar nu sunt valide.');
+
+        case 'not-found':
+          throw Exception(
+            'Nu există locații disponibile pentru zona introdusă.',
+          );
+
+        case 'deadline-exceeded':
+          throw Exception(
+            'Generarea itinerarului a durat prea mult. Încearcă din nou.',
+          );
+
+        default:
+          throw Exception('Itinerarul nu a putut fi generat.');
+      }
+    } catch (error) {
+      final mesaj = error.toString().replaceFirst('Exception: ', '');
+
+      throw Exception(mesaj);
+    }
+  }
 }
