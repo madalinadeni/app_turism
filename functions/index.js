@@ -547,3 +547,231 @@ Nu inventa orașe, județe sau categorii.
       }
     },
   );
+
+  exports.chatTuristic = onCall(
+    {
+      region: "europe-west1",
+      secrets: [openAiApiKey],
+      timeoutSeconds: 90,
+      memory: "512MiB",
+      maxInstances: 5,
+    },
+    async (request) => {
+      if (!request.auth) {
+        throw new HttpsError(
+          "unauthenticated",
+          "Trebuie să fii autentificat pentru a folosi chatbotul.",
+        );
+      }
+
+      const mesaj =
+        request.data?.mesaj?.toString().trim() ?? "";
+
+      if (mesaj.length < 2) {
+        throw new HttpsError(
+          "invalid-argument",
+          "Mesajul trebuie să conțină minimum 2 caractere.",
+        );
+      }
+
+      if (mesaj.length > 500) {
+        throw new HttpsError(
+          "invalid-argument",
+          "Mesajul este prea lung.",
+        );
+      }
+
+      const istoricRaw = Array.isArray(request.data?.istoric)
+        ? request.data.istoric
+        : [];
+
+      /*
+       Pastram doar ultimele 8 mesaje pentru ca istoricul trimis sa nu devina prea mare.
+      */
+      const istoric = istoricRaw
+        .slice(-8)
+        .map((element) => {
+          const rol = element?.rol === "assistant"
+            ? "assistant"
+            : "user";
+
+          const continut = element?.continut
+            ?.toString()
+            .trim()
+            .substring(0, 500) ?? "";
+
+          return {
+            rol,
+            continut,
+          };
+        })
+        .filter((element) => element.continut.length > 0);
+
+      try {
+        const locatiiSnapshot = await db
+          .collection("locatii")
+          .get();
+
+        const locatiiDisponibile = locatiiSnapshot.docs
+          .map((document) => {
+            const data = document.data();
+
+            const descriere =
+              data.descriere?.toString() ?? "";
+
+            return {
+              id: document.id,
+              nume: data.nume?.toString() ?? "",
+              categorie: data.categorie?.toString() ?? "",
+              oras: data.oras?.toString() ?? "",
+              judet: data.judet?.toString() ?? "",
+              descriere: descriere.length > 250
+                ? descriere.substring(0, 250)
+                : descriere,
+              facilitati: Array.isArray(data.facilitati)
+                ? data.facilitati.slice(0, 10)
+                : [],
+              orar: data.orar?.toString() ?? "",
+              rating: Number(data.rating ?? 0),
+              nrRecenzii: Number(data.nrRecenzii ?? 0),
+              pretMin: Number(data.pretMin ?? 0),
+              pretMax: Number(data.pretMax ?? 0),
+            };
+          })
+          .sort((a, b) => {
+            if (b.rating !== a.rating) {
+              return b.rating - a.rating;
+            }
+
+            return b.nrRecenzii - a.nrRecenzii;
+          })
+          .slice(0, 60);
+
+        const openai = await getOpenAIClient();
+
+        const response = await openai.responses.create({
+          model: "gpt-4o-mini",
+          store: false,
+
+          instructions: `
+  Ești chatbotul turistic al aplicației TourMate.
+
+  Răspunde în limba română, prietenos și clar.
+
+  Reguli obligatorii:
+  - Pentru recomandări, folosește numai locațiile din lista primită.
+  - Nu inventa locații, prețuri, orare sau facilități.
+  - Când recomanzi o locație, returnează ID-ul ei în locatieIds.
+  - Nu include în locatieIds valori care nu există în listă.
+  - Ține cont de istoricul conversației.
+  - Oferă răspunsuri concise, de maximum 180 de cuvinte.
+  - Dacă informația nu există în datele primite, spune clar acest lucru.
+  - Pentru program, preț și disponibilitate, recomandă verificarea înaintea vizitei.
+  - Nu pretinde că ai informații meteo sau date în timp real.
+  - sugestii trebuie să conțină maximum 3 întrebări scurte
+    pe care utilizatorul le-ar putea adresa în continuare.
+          `,
+
+          input: JSON.stringify({
+            mesajUtilizator: mesaj,
+            istoric,
+            locatiiDisponibile,
+          }),
+
+          text: {
+            format: {
+              type: "json_schema",
+              name: "raspuns_chat_turistic",
+              strict: true,
+              schema: {
+                type: "object",
+
+                properties: {
+                  raspuns: {
+                    type: "string",
+                  },
+
+                  locatieIds: {
+                    type: "array",
+                    items: {
+                      type: "string",
+                    },
+                  },
+
+                  sugestii: {
+                    type: "array",
+                    items: {
+                      type: "string",
+                    },
+                  },
+                },
+
+                required: [
+                  "raspuns",
+                  "locatieIds",
+                  "sugestii",
+                ],
+
+                additionalProperties: false,
+              },
+            },
+          },
+        });
+
+        if (!response.output_text) {
+          throw new Error(
+            "Răspunsul chatbotului este gol.",
+          );
+        }
+
+        const rezultat = JSON.parse(response.output_text);
+
+        /*
+          Eliminam orice ID care nu apartine unei locatii reale.
+        */
+        const idsValide = new Set(
+          locatiiDisponibile.map((locatie) => locatie.id),
+        );
+
+        rezultat.locatieIds = rezultat.locatieIds
+          .filter((id) => idsValide.has(id))
+          .slice(0, 5);
+
+        rezultat.sugestii = rezultat.sugestii.slice(0, 3);
+
+        return rezultat;
+      } catch (error) {
+        if (error instanceof HttpsError) {
+          throw error;
+        }
+
+        const detaliiEroare = {
+          message: error?.message ?? String(error),
+          status: error?.status ?? null,
+          code:
+            error?.code ??
+            error?.error?.code ??
+            null,
+          type:
+            error?.type ??
+            error?.error?.type ??
+            null,
+          requestId: error?.request_id ?? null,
+        };
+
+        logger.error(
+          "Eroare chatbot turistic",
+          detaliiEroare,
+        );
+
+        throw new HttpsError(
+          "internal",
+          `Chatbotul nu a putut răspunde (${
+            detaliiEroare.status ?? "fără status"
+          } / ${
+            detaliiEroare.code ?? "fără cod"
+          }).`,
+        );
+      }
+    },
+  );
