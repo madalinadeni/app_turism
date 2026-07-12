@@ -108,4 +108,84 @@ class AiService {
       throw Exception(mesaj);
     }
   }
+
+  Future<Map<String, dynamic>> chatTuristic({
+    required String mesaj,
+    required List<Map<String, String>> istoric,
+  }) async {
+    final mesajCuratat = mesaj.trim();
+
+    if (mesajCuratat.length < 2) {
+      throw Exception('Mesajul trebuie să conțină minimum 2 caractere.');
+    }
+
+    if (mesajCuratat.length > 500) {
+      throw Exception('Mesajul este prea lung.');
+    }
+
+    try {
+      final istoricScurt = istoric.length > 8
+          ? istoric.sublist(istoric.length - 8)
+          : istoric;
+
+      final callable = _functions.httpsCallable(
+        'chatTuristic',
+        options: HttpsCallableOptions(timeout: const Duration(seconds: 120)),
+      );
+
+      final rezultat = await callable.call({
+        'mesaj': mesajCuratat,
+        'istoric': istoricScurt
+            .map(
+              (element) => {
+                'rol': element['rol'] ?? 'user',
+                'continut': element['continut'] ?? '',
+              },
+            )
+            .toList(),
+      });
+
+      final data = rezultat.data;
+
+      if (data is! Map) {
+        throw Exception('Răspunsul primit de la chatbot nu este valid.');
+      }
+
+      return Map<String, dynamic>.from(data);
+    } on FirebaseFunctionsException catch (error) {
+      final mesajEroare = error.message?.trim();
+
+      if (mesajEroare != null && mesajEroare.isNotEmpty) {
+        throw Exception(mesajEroare);
+      }
+
+      switch (error.code) {
+        case 'unauthenticated':
+          throw Exception(
+            'Trebuie să fii autentificat pentru a folosi chatbotul.',
+          );
+
+        case 'invalid-argument':
+          throw Exception('Mesajul trimis nu este valid.');
+
+        case 'deadline-exceeded':
+          throw Exception('Chatbotul a răspuns prea greu. Încearcă din nou.');
+
+        case 'resource-exhausted':
+          throw Exception(
+            'Serviciul AI este momentan ocupat. Încearcă din nou.',
+          );
+
+        case 'unavailable':
+          throw Exception('Serviciul chatbot nu este disponibil momentan.');
+
+        default:
+          throw Exception('Chatbotul nu a putut răspunde.');
+      }
+    } catch (error) {
+      final mesajEroare = error.toString().replaceFirst('Exception: ', '');
+
+      throw Exception(mesajEroare);
+    }
+  }
 }
