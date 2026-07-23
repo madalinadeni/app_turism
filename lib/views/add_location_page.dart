@@ -1,7 +1,7 @@
 import 'dart:io';
-
 import 'package:app_turism/sabloane/locatie_sablon.dart';
 import 'package:app_turism/service/locatie_service.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
@@ -32,13 +32,14 @@ class _AddLocationPageState extends State<AddLocationPage> {
 
   File? _selectedImage;
   bool _isLoading = false;
-  bool _popular = false;
 
   Future<void> _pickImage() async {
     final pickedFile = await ImagePicker().pickImage(
       source: ImageSource.gallery,
       imageQuality: 80,
     );
+
+    if (!mounted) return;
 
     if (pickedFile != null) {
       setState(() {
@@ -53,9 +54,12 @@ class _AddLocationPageState extends State<AddLocationPage> {
     try {
       final fileName = DateTime.now().millisecondsSinceEpoch.toString();
 
+      final uid = FirebaseAuth.instance.currentUser!.uid;
+
       final ref = FirebaseStorage.instance
           .ref()
-          .child('locatii')
+          .child('propuneri_locatii')
+          .child(uid)
           .child('$fileName.jpg');
 
       print("Începe upload...");
@@ -102,57 +106,80 @@ class _AddLocationPageState extends State<AddLocationPage> {
         oras: _orasController.text.trim(),
         orar: _orarController.text.trim(),
         imagini: imageUrl != null ? [imageUrl] : [],
-        latitudine: double.tryParse(_latController.text.trim()) ?? 0,
-        longitudine: double.tryParse(_lngController.text.trim()) ?? 0,
-        pretMin: double.tryParse(_pretMinController.text.trim()) ?? 0,
-        pretMax: double.tryParse(_pretMaxController.text.trim()) ?? 0,
+        latitudine:
+            double.tryParse(_latController.text.trim().replaceAll(',', '.')) ??
+            0,
+        longitudine:
+            double.tryParse(_lngController.text.trim().replaceAll(',', '.')) ??
+            0,
+        pretMin:
+            double.tryParse(
+              _pretMinController.text.trim().replaceAll(',', '.'),
+            ) ??
+            0,
+        pretMax:
+            double.tryParse(
+              _pretMaxController.text.trim().replaceAll(',', '.'),
+            ) ??
+            0,
         rating: 0,
         nrRecenzii: 0,
-
         facilitati: _facilitatiController.text
             .split(',')
-            .map((e) => e.trim())
-            .where((e) => e.isNotEmpty)
+            .map((element) => element.trim())
+            .where((element) => element.isNotEmpty)
             .toList(),
 
-        popular: _popular,
+        popular: false,
       );
 
-      await _locatieService.addLocatie(locatie);
+      await _locatieService.trimitePropunereLocatie(locatie);
 
       if (!mounted) return;
 
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Locația a fost adăugată cu succes!')),
+        const SnackBar(
+          content: Text(
+            'Propunerea a fost trimisă și va fi verificată de un administrator.',
+          ),
+        ),
       );
 
-      Navigator.pop(context);
-    } catch (e) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Eroare: $e')));
+      Navigator.pop(context, true);
+    } catch (error) {
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Eroare: ${error.toString().replaceFirst('Exception: ', '')}',
+          ),
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
     }
+  }
 
-    setState(() {
-      _isLoading = false;
-    });
+  @override
+  void dispose() {
+    _numeController.dispose();
+    _descriereController.dispose();
+    _categorieController.dispose();
+    _judetController.dispose();
+    _orasController.dispose();
+    _orarController.dispose();
+    _latController.dispose();
+    _lngController.dispose();
+    _pretMinController.dispose();
+    _pretMaxController.dispose();
+    _facilitatiController.dispose();
 
-    @override
-    void dispose() {
-      _numeController.dispose();
-      _descriereController.dispose();
-      _categorieController.dispose();
-      _judetController.dispose();
-      _orasController.dispose();
-      _orarController.dispose();
-      _latController.dispose();
-      _lngController.dispose();
-      _pretMinController.dispose();
-      _pretMaxController.dispose();
-      _facilitatiController.dispose();
-
-      super.dispose();
-    }
+    super.dispose();
   }
 
   Widget _buildField(TextEditingController controller, String label) {
@@ -177,7 +204,7 @@ class _AddLocationPageState extends State<AddLocationPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Adaugă locație')),
+      appBar: AppBar(title: const Text('Propune o locație')),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
           : Padding(
@@ -201,16 +228,6 @@ class _AddLocationPageState extends State<AddLocationPage> {
                       'Facilități (separate prin virgulă)',
                     ),
 
-                    SwitchListTile(
-                      title: const Text('Locație populară'),
-                      value: _popular,
-                      onChanged: (value) {
-                        setState(() {
-                          _popular = value;
-                        });
-                      },
-                    ),
-
                     const SizedBox(height: 10),
 
                     ElevatedButton.icon(
@@ -231,8 +248,8 @@ class _AddLocationPageState extends State<AddLocationPage> {
                     const SizedBox(height: 20),
 
                     ElevatedButton(
-                      onPressed: _saveLocation,
-                      child: const Text('Salvează locația'),
+                      onPressed: _isLoading ? null : _saveLocation,
+                      child: const Text('Trimite spre aprobare'),
                     ),
                   ],
                 ),
