@@ -7,6 +7,9 @@ import '../statistici_page.dart';
 import '../ai_test_page.dart';
 import 'package:app_turism/service/recomandari_service.dart';
 import '../location_details_page.dart';
+import '../chat_turistic_page.dart';
+import 'notificari_buton.dart';
+import 'package:app_turism/service/fcm_service.dart';
 
 class HomePageTab extends StatefulWidget {
   const HomePageTab({super.key});
@@ -17,26 +20,6 @@ class HomePageTab extends StatefulWidget {
 
 class _HomePageTabState extends State<HomePageTab> {
   final TextEditingController _searchController = TextEditingController();
-  List<String> selectedCategories = [];
-
-  final List<String> categories = [
-    'Hoteluri',
-    'Muzee',
-    'Restaurante',
-    'Trasee montane',
-    'Trasee turistice',
-    'Atracții',
-  ];
-
-  final List<Map<String, String>> popularPlaces = [
-    {'title': 'Parcul Herăstrău', 'image': 'media/muzeu.jpeg'},
-    {'title': 'Piața Unirii', 'image': 'media/castel.jpeg'},
-  ];
-
-  final List<Map<String, String>> experiences = [
-    {'title': 'Tur ghidat Brașov', 'image': 'media/castel.jpeg'},
-    {'title': 'Degustare vinuri', 'image': 'media/hotel.jpeg'},
-  ];
 
   Future<void> _deschideCautareaInteligenta() async {
     final text = _searchController.text.trim();
@@ -52,13 +35,20 @@ class _HomePageTabState extends State<HomePageTab> {
 
     await Navigator.push(
       context,
-      MaterialPageRoute(builder: (_) => AiTestPage(initialText: text)),
+      MaterialPageRoute(builder: (context) => AiTestPage(initialText: text)),
     );
 
     if (!mounted) return;
 
     _searchController.clear();
     _reincarcaRecomandari();
+  }
+
+  Future<void> _deschideChatTuristic() async {
+    await Navigator.push(
+      context,
+      MaterialPageRoute(builder: (context) => const ChatTuristicPage()),
+    );
   }
 
   final RecomandariService _recomandariService = RecomandariService();
@@ -70,6 +60,7 @@ class _HomePageTabState extends State<HomePageTab> {
     super.initState();
 
     _recomandariFuture = _recomandariService.getRecomandari();
+    FcmService().initializeaza();
   }
 
   void _reincarcaRecomandari() {
@@ -178,7 +169,7 @@ class _HomePageTabState extends State<HomePageTab> {
               child: ListView.separated(
                 scrollDirection: Axis.horizontal,
                 itemCount: recomandari.length,
-                separatorBuilder: (_, __) {
+                separatorBuilder: (context, index) {
                   return const SizedBox(width: 14);
                 },
                 itemBuilder: (context, index) {
@@ -198,7 +189,7 @@ class _HomePageTabState extends State<HomePageTab> {
                           await Navigator.push(
                             context,
                             MaterialPageRoute(
-                              builder: (_) =>
+                              builder: (context) =>
                                   LocationDetailsPage(locatie: locatie),
                             ),
                           );
@@ -218,9 +209,10 @@ class _HomePageTabState extends State<HomePageTab> {
                                       locatie.imagini.first,
                                       fit: BoxFit.cover,
                                       filterQuality: FilterQuality.high,
-                                      errorBuilder: (_, __, ___) {
-                                        return _imagineRecomandare();
-                                      },
+                                      errorBuilder:
+                                          (context, error, stackTrace) {
+                                            return _imagineRecomandare();
+                                          },
                                     )
                                   : _imagineRecomandare(),
                             ),
@@ -345,41 +337,19 @@ class _HomePageTabState extends State<HomePageTab> {
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
-        // Notificari
         Row(
-          mainAxisAlignment: MainAxisAlignment.end,
           children: [
-            Stack(
-              children: [
-                IconButton(
-                  icon: const Icon(Icons.notifications),
-                  onPressed: () {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('Nu sunt notificări noi')),
-                    );
-                  },
-                ),
-                Positioned(
-                  right: 8,
-                  top: 8,
-                  child: Container(
-                    padding: const EdgeInsets.all(4),
-                    decoration: const BoxDecoration(
-                      color: Colors.red,
-                      shape: BoxShape.circle,
-                    ),
-                    child: const Text(
-                      '3',
-                      style: TextStyle(color: Colors.white, fontSize: 12),
-                    ),
-                  ),
-                ),
-              ],
+            const Expanded(
+              child: Text(
+                'TourMate',
+                style: TextStyle(fontSize: 26, fontWeight: FontWeight.bold),
+              ),
             ),
+            const NotificariButon(),
           ],
         ),
 
-        // Cautare
+        const SizedBox(height: 16),
         TextField(
           controller: _searchController,
           textInputAction: TextInputAction.search,
@@ -421,7 +391,7 @@ class _HomePageTabState extends State<HomePageTab> {
             onTap: () {
               Navigator.push(
                 context,
-                MaterialPageRoute(builder: (_) => TopLocationsPage()),
+                MaterialPageRoute(builder: (context) => TopLocationsPage()),
               );
             },
           ),
@@ -447,7 +417,7 @@ class _HomePageTabState extends State<HomePageTab> {
             onTap: () {
               Navigator.push(
                 context,
-                MaterialPageRoute(builder: (_) => PlannerPage()),
+                MaterialPageRoute(builder: (context) => PlannerPage()),
               );
             },
           ),
@@ -455,83 +425,48 @@ class _HomePageTabState extends State<HomePageTab> {
 
         const SizedBox(height: 16),
 
-        // Categorii
-        SingleChildScrollView(
-          scrollDirection: Axis.horizontal,
-          child: Row(
-            children: categories.map((cat) {
-              final isSelected = selectedCategories.contains(cat);
-              return Padding(
-                padding: const EdgeInsets.only(right: 8.0),
-                child: ChoiceChip(
-                  label: Text(cat),
-                  selected: isSelected,
-                  onSelected: (_) {
-                    setState(() {
-                      if (isSelected) {
-                        selectedCategories.remove(cat);
-                      } else {
-                        selectedCategories.add(cat);
-                      }
-                    });
-                  },
-                ),
-              );
-            }).toList(),
-          ),
-        ),
-        const SizedBox(height: 16),
-
-        // Recomandări
-        _recomandariSection(),
-
-        const SizedBox(height: 24),
-
-        // Populare
-        const Text(
-          'Populare',
-          style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
-        ),
-        const SizedBox(height: 16),
-        SizedBox(
-          height: 150,
-          child: ListView.separated(
-            scrollDirection: Axis.horizontal,
-            itemCount: popularPlaces.length,
-            separatorBuilder: (_, __) => const SizedBox(width: 16),
-            itemBuilder: (context, index) {
-              final place = popularPlaces[index];
-              return Card(
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(16),
-                ),
-                elevation: 4,
-                child: SizedBox(
-                  width: 160,
-                  child: Column(
-                    children: [
-                      ClipRRect(
-                        borderRadius: const BorderRadius.vertical(
-                          top: Radius.circular(16),
-                        ),
-                        child: Image.asset(
-                          place['image']!,
-                          height: 100,
-                          width: 160,
-                          fit: BoxFit.cover,
-                        ),
-                      ),
-                      Padding(
-                        padding: const EdgeInsets.all(8.0),
-                        child: Text(place['title']!),
-                      ),
-                    ],
+        Card(
+          margin: const EdgeInsets.symmetric(vertical: 8),
+          child: InkWell(
+            borderRadius: BorderRadius.circular(12),
+            onTap: _deschideChatTuristic,
+            child: const Padding(
+              padding: EdgeInsets.all(16),
+              child: Row(
+                children: [
+                  CircleAvatar(
+                    radius: 26,
+                    child: Icon(Icons.smart_toy_outlined, size: 28),
                   ),
-                ),
-              );
-            },
+                  SizedBox(width: 16),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Asistent turistic AI',
+                          style: TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        SizedBox(height: 4),
+                        Text(
+                          'Primește recomandări și răspunsuri despre locațiile din aplicație.',
+                        ),
+                      ],
+                    ),
+                  ),
+                  Icon(Icons.arrow_forward_ios, size: 18),
+                ],
+              ),
+            ),
           ),
         ),
+
+        const SizedBox(height: 16),
+
+        _recomandariSection(),
 
         const SizedBox(height: 16),
 
@@ -553,7 +488,7 @@ class _HomePageTabState extends State<HomePageTab> {
             onTap: () {
               Navigator.push(
                 context,
-                MaterialPageRoute(builder: (_) => const StatisticsPage()),
+                MaterialPageRoute(builder: (context) => const StatisticsPage()),
               );
             },
           ),
@@ -579,68 +514,19 @@ class _HomePageTabState extends State<HomePageTab> {
             onTap: () {
               Navigator.push(
                 context,
-                MaterialPageRoute(builder: (_) => const ArticolePage()),
+                MaterialPageRoute(builder: (context) => const ArticolePage()),
               );
             },
           ),
         ),
 
-        const SizedBox(height: 24),
-
-        // Experiente / activitati
-        const Text(
-          'Experiențe & Activități',
-          style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
-        ),
         const SizedBox(height: 16),
-        SizedBox(
-          height: 150,
-          child: ListView.separated(
-            scrollDirection: Axis.horizontal,
-            itemCount: experiences.length,
-            separatorBuilder: (_, __) => const SizedBox(width: 16),
-            itemBuilder: (context, index) {
-              final exp = experiences[index];
-              return Card(
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(16),
-                ),
-                elevation: 4,
-                child: SizedBox(
-                  width: 160,
-                  child: Column(
-                    children: [
-                      ClipRRect(
-                        borderRadius: const BorderRadius.vertical(
-                          top: Radius.circular(16),
-                        ),
-                        child: Image.asset(
-                          exp['image']!,
-                          height: 100,
-                          width: 160,
-                          fit: BoxFit.cover,
-                        ),
-                      ),
-                      Padding(
-                        padding: const EdgeInsets.all(8.0),
-                        child: Text(exp['title']!),
-                      ),
-                    ],
-                  ),
-                ),
-              );
-            },
-          ),
-        ),
 
-        const SizedBox(height: 24),
-
-        // Harta
         ElevatedButton.icon(
           onPressed: () {
             Navigator.push(
               context,
-              MaterialPageRoute(builder: (_) => const MapPage()),
+              MaterialPageRoute(builder: (context) => const MapPage()),
             );
           },
           icon: const Icon(Icons.map),
@@ -648,19 +534,6 @@ class _HomePageTabState extends State<HomePageTab> {
         ),
 
         const SizedBox(height: 24),
-
-        // Filtru (simbolic)
-        ElevatedButton.icon(
-          onPressed: () {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text('Filtru deschis (implementare viitoare)'),
-              ),
-            );
-          },
-          icon: const Icon(Icons.filter_alt),
-          label: const Text('Filtrează'),
-        ),
       ],
     );
   }
