@@ -5,6 +5,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:app_turism/views/add_location_page.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'propunerile_mele_page.dart';
 
 import 'login_view.dart';
 
@@ -23,24 +24,72 @@ class _AccountSettingsPageState extends State<AccountSettingsPage> {
   XFile? _profileImage;
   final ImagePicker _picker = ImagePicker();
 
-  String userName = ''; // Numele utilizatorului vizibil pe profil
+  String userName = '';
 
   @override
   void initState() {
     super.initState();
-    _loadUserName();
+    _loadUserData();
   }
 
-  // Încarcă numele salvat din SharedPreferences
-  Future<void> _loadUserName() async {
+  Future<void> _loadUserData() async {
+    final utilizator = FirebaseAuth.instance.currentUser;
+
+    if (utilizator == null) {
+      return;
+    }
+
+    final uid = utilizator.uid;
+
+    final userRef = FirebaseFirestore.instance
+        .collection('utilizatori')
+        .doc(uid);
+
+    final document = await userRef.get();
+
+    if (!document.exists) {
+      await userRef.set({
+        'nume': utilizator.displayName?.trim().isNotEmpty == true
+            ? utilizator.displayName
+            : 'Utilizator',
+        'email': utilizator.email ?? '',
+        'imagineProfil': '',
+        'puncte': 0,
+        'nivel': 1,
+        'titlu': 'Explorator Începător',
+        'badge': '🌱',
+        'rol': 'utilizator',
+        'dataCreare': FieldValue.serverTimestamp(),
+      });
+    }
+
+    final documentActualizat = await userRef.get();
+    final data = documentActualizat.data() ?? {};
+
     final prefs = await SharedPreferences.getInstance();
+
+    await prefs.remove('userName');
+    await prefs.remove('profileImagePath');
+
+    final pozaSalvata = prefs.getString('profileImagePath_$uid');
+
+    if (!mounted) return;
+
     setState(() {
-      userName = prefs.getString('userName') ?? '';
+      userName = data['nume']?.toString().trim().isNotEmpty == true
+          ? data['nume'].toString()
+          : 'Utilizator';
+
       _nameController.text = userName;
+
+      if (pozaSalvata != null && pozaSalvata.trim().isNotEmpty) {
+        _profileImage = XFile(pozaSalvata);
+      } else {
+        _profileImage = null;
+      }
     });
   }
 
-  // Salvează numele în SharedPreferences și îl face vizibil
   Future<void> _saveName() async {
     final String name = _nameController.text.trim();
 
@@ -51,14 +100,24 @@ class _AccountSettingsPageState extends State<AccountSettingsPage> {
       return;
     }
 
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString('userName', name);
+    final utilizator = FirebaseAuth.instance.currentUser;
 
-    final uid = FirebaseAuth.instance.currentUser!.uid;
+    if (utilizator == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Nu există utilizator autentificat.')),
+      );
+      return;
+    }
 
-    await FirebaseFirestore.instance.collection('utilizatori').doc(uid).set({
-      'nume': name,
-    }, SetOptions(merge: true));
+    await FirebaseFirestore.instance
+        .collection('utilizatori')
+        .doc(utilizator.uid)
+        .set({
+          'nume': name,
+          'email': utilizator.email ?? '',
+        }, SetOptions(merge: true));
+
+    if (!mounted) return;
 
     setState(() {
       userName = name;
@@ -70,21 +129,36 @@ class _AccountSettingsPageState extends State<AccountSettingsPage> {
   }
 
   Future<void> _pickImage() async {
+    final utilizator = FirebaseAuth.instance.currentUser;
+
+    if (utilizator == null) {
+      return;
+    }
+
     final XFile? image = await _picker.pickImage(
-      source: ImageSource.gallery, // sau ImageSource.camera
+      source: ImageSource.gallery,
       imageQuality: 80,
     );
-    if (image != null) {
-      setState(() {
-        _profileImage = image;
-      });
+
+    if (image == null) {
+      return;
     }
+
+    final prefs = await SharedPreferences.getInstance();
+
+    await prefs.setString('profileImagePath_${utilizator.uid}', image.path);
+
+    if (!mounted) return;
+
+    setState(() {
+      _profileImage = image;
+    });
   }
 
   void _changePassword() {
     showDialog(
       context: context,
-      builder: (_) => AlertDialog(
+      builder: (context) => AlertDialog(
         title: const Text('Schimbă parola'),
         content: TextField(
           obscureText: true,
@@ -102,12 +176,13 @@ class _AccountSettingsPageState extends State<AccountSettingsPage> {
     );
   }
 
-  void _logout() async {
+  Future<void> _logout() async {
     await FirebaseAuth.instance.signOut();
 
-    // Șterge stiva de navigație și du-te la login
+    if (!mounted) return;
+
     Navigator.of(context).pushAndRemoveUntil(
-      MaterialPageRoute(builder: (_) => const LoginView()),
+      MaterialPageRoute(builder: (context) => const LoginView()),
       (route) => false,
     );
   }
@@ -115,7 +190,7 @@ class _AccountSettingsPageState extends State<AccountSettingsPage> {
   void _deleteAccount() {
     showDialog(
       context: context,
-      builder: (_) => AlertDialog(
+      builder: (dialogContext) => AlertDialog(
         title: const Text('Șterge cont'),
         content: Column(
           mainAxisSize: MainAxisSize.min,
@@ -134,29 +209,38 @@ class _AccountSettingsPageState extends State<AccountSettingsPage> {
         ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(context),
+            onPressed: () => Navigator.pop(dialogContext),
             child: const Text('Anulează'),
           ),
           TextButton(
             onPressed: () async {
               try {
-                User? user = FirebaseAuth.instance.currentUser;
+                final user = FirebaseAuth.instance.currentUser;
 
-                if (user != null) {
-                  // Re-authenticate user
-                  final credential = EmailAuthProvider.credential(
-                    email: _reAuthEmailController.text.trim(),
-                    password: _reAuthPasswordController.text.trim(),
-                  );
-                  await user.reauthenticateWithCredential(credential);
-
-                  // Delete user
-                  await user.delete();
-
-                  // Navighează la login
-                  Navigator.of(context).popUntil((route) => route.isFirst);
+                if (user == null) {
+                  return;
                 }
+
+                final credential = EmailAuthProvider.credential(
+                  email: _reAuthEmailController.text.trim(),
+                  password: _reAuthPasswordController.text.trim(),
+                );
+
+                await user.reauthenticateWithCredential(credential);
+                await user.delete();
+
+                if (!dialogContext.mounted) return;
+                Navigator.pop(dialogContext);
+
+                if (!mounted) return;
+
+                Navigator.of(context).pushAndRemoveUntil(
+                  MaterialPageRoute(builder: (context) => const LoginView()),
+                  (route) => false,
+                );
               } on FirebaseAuthException catch (e) {
+                if (!mounted) return;
+
                 ScaffoldMessenger.of(context).showSnackBar(
                   SnackBar(
                     content: Text(e.message ?? 'Eroare la ștergere cont'),
@@ -228,12 +312,28 @@ class _AccountSettingsPageState extends State<AccountSettingsPage> {
             ),
             ListTile(
               leading: const Icon(Icons.add_location_alt),
-              title: const Text('Adaugă locație'),
+              title: const Text('Propune locație'),
               trailing: const Icon(Icons.arrow_forward_ios),
               onTap: () {
                 Navigator.push(
                   context,
-                  MaterialPageRoute(builder: (_) => const AddLocationPage()),
+                  MaterialPageRoute(
+                    builder: (context) => const AddLocationPage(),
+                  ),
+                );
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.list_alt),
+              title: const Text('Propunerile mele'),
+              subtitle: const Text('Vezi statusul locațiilor trimise'),
+              trailing: const Icon(Icons.arrow_forward_ios),
+              onTap: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => const PropunerileMelePage(),
+                  ),
                 );
               },
             ),
