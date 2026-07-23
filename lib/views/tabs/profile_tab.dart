@@ -6,6 +6,8 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../certificate_page.dart';
 import 'package:app_turism/service/recenzie_service.dart';
+import 'package:app_turism/service/rol_service.dart';
+import '../admin_propuneri_locatii_page.dart';
 
 class ProfileTab extends StatefulWidget {
   const ProfileTab({super.key});
@@ -17,6 +19,7 @@ class ProfileTab extends StatefulWidget {
 class _ProfileTabState extends State<ProfileTab> {
   String userName = '';
   String? profileImagePath;
+  final RolService _rolService = RolService();
 
   @override
   void initState() {
@@ -25,10 +28,69 @@ class _ProfileTabState extends State<ProfileTab> {
   }
 
   Future<void> _loadUserData() async {
+    final utilizator = FirebaseAuth.instance.currentUser;
+
+    if (utilizator == null) {
+      if (!mounted) return;
+
+      setState(() {
+        userName = 'Utilizator';
+        profileImagePath = null;
+      });
+
+      return;
+    }
+
+    final uid = utilizator.uid;
+
+    final userRef = FirebaseFirestore.instance
+        .collection('utilizatori')
+        .doc(uid);
+
+    final document = await userRef.get();
+
+    if (!document.exists) {
+      await userRef.set({
+        'nume': utilizator.displayName?.trim().isNotEmpty == true
+            ? utilizator.displayName
+            : 'Utilizator',
+        'email': utilizator.email ?? '',
+        'imagineProfil': '',
+        'puncte': 0,
+        'nivel': 1,
+        'titlu': 'Explorator Începător',
+        'badge': '🌱',
+        'rol': 'utilizator',
+        'dataCreare': FieldValue.serverTimestamp(),
+      });
+    }
+
+    final documentActualizat = await userRef.get();
+    final data = documentActualizat.data() ?? {};
+
     final prefs = await SharedPreferences.getInstance();
+
+    await prefs.remove('userName');
+    await prefs.remove('profileImagePath');
+
+    final pozaSalvata = prefs.getString('profileImagePath_$uid');
+
+    String? pozaValida;
+
+    if (pozaSalvata != null &&
+        pozaSalvata.trim().isNotEmpty &&
+        File(pozaSalvata).existsSync()) {
+      pozaValida = pozaSalvata;
+    }
+
+    if (!mounted) return;
+
     setState(() {
-      userName = prefs.getString('userName') ?? 'Nume utilizator';
-      profileImagePath = prefs.getString('profileImagePath');
+      userName = data['nume']?.toString().trim().isNotEmpty == true
+          ? data['nume'].toString()
+          : 'Utilizator';
+
+      profileImagePath = pozaValida;
     });
   }
 
@@ -295,11 +357,64 @@ class _ProfileTabState extends State<ProfileTab> {
 
                 Text('❤️ Favorite: $favorite'),
                 Text('⭐ Recenzii scrise: $recenzii'),
-                Text('📍 Locații adăugate: $locatii'),
+                Text('📍 Locații aprobate:  $locatii'),
                 Text('🗺 Planner-e create: $plannere'),
               ],
             ),
           ),
+        );
+      },
+    );
+  }
+
+  Widget _adminPropuneriCard() {
+    return StreamBuilder<bool>(
+      stream: _rolService.urmaresteRolAdmin(),
+      initialData: false,
+      builder: (context, snapshot) {
+        final esteAdmin = snapshot.data ?? false;
+
+        if (!esteAdmin) {
+          return const SizedBox.shrink();
+        }
+
+        return Column(
+          children: [
+            Card(
+              elevation: 4,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(16),
+              ),
+              child: ListTile(
+                leading: const Icon(
+                  Icons.admin_panel_settings,
+                  color: Colors.deepPurple,
+                  size: 36,
+                ),
+                title: const Text(
+                  'Administrare propuneri',
+                  style: TextStyle(fontWeight: FontWeight.bold),
+                ),
+                subtitle: const Text(
+                  'Verifică locațiile trimise de utilizatori',
+                ),
+                trailing: const Icon(Icons.chevron_right),
+                onTap: () async {
+                  await Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => const AdminPropuneriLocatiiPage(),
+                    ),
+                  );
+
+                  if (!mounted) return;
+
+                  setState(() {});
+                },
+              ),
+            ),
+            const SizedBox(height: 20),
+          ],
         );
       },
     );
@@ -312,13 +427,15 @@ class _ProfileTabState extends State<ProfileTab> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Info utilizator
           Center(
             child: Column(
               children: [
                 CircleAvatar(
                   radius: 50,
-                  backgroundImage: profileImagePath != null
+                  backgroundImage:
+                      profileImagePath != null &&
+                          profileImagePath!.trim().isNotEmpty &&
+                          File(profileImagePath!).existsSync()
                       ? FileImage(File(profileImagePath!))
                       : const AssetImage('media/hotel.jpeg') as ImageProvider,
                 ),
@@ -373,7 +490,8 @@ class _ProfileTabState extends State<ProfileTab> {
 
           const SizedBox(height: 20),
 
-          // Setări cont
+          _adminPropuneriCard(),
+
           const Text(
             'Setări cont',
             style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
@@ -384,12 +502,10 @@ class _ProfileTabState extends State<ProfileTab> {
             title: const Text('Editează contul'),
             trailing: const Icon(Icons.arrow_forward_ios),
             onTap: () async {
-              // Navighează la AccountSettingsPage și așteaptă update
               await Navigator.push(
                 context,
                 MaterialPageRoute(builder: (_) => const AccountSettingsPage()),
               );
-              // Reîncarcă datele după ce utilizatorul a modificat
               _loadUserData();
             },
           ),
