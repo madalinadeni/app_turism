@@ -6,6 +6,7 @@ import '../service/recenzie_service.dart';
 import '../sabloane/recenzie_sablon.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import '../service/rol_service.dart';
 
 class LocationDetailsPage extends StatefulWidget {
   final SablonLocatie locatie;
@@ -21,6 +22,7 @@ class _LocationDetailsPageState extends State<LocationDetailsPage> {
   final _reviewController = TextEditingController();
   double _rating = 5;
   final RecenzieService _recenzieService = RecenzieService();
+  final RolService _rolService = RolService();
   int _currentImageIndex = 0;
   @override
   void initState() {
@@ -239,6 +241,58 @@ class _LocationDetailsPageState extends State<LocationDetailsPage> {
     controller.dispose();
   }
 
+  Future<void> _stergeLocatia() async {
+    final esteAdmin = await _rolService.esteAdmin();
+
+    if (!mounted) return;
+
+    if (!esteAdmin) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Nu ai permisiunea să ștergi locații.')),
+      );
+      return;
+    }
+
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Ștergere locație'),
+        content: const Text('Sigur dorești să ștergi această locație?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Anulează'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('Șterge'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm != true) return;
+
+    try {
+      await LocatieService().deleteLocatie(widget.locatie.id);
+
+      if (!mounted) return;
+
+      Navigator.pop(context, true);
+    } catch (error) {
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Locația nu a putut fi ștearsă: '
+            '${error.toString().replaceFirst('Exception: ', '')}',
+          ),
+        ),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -246,6 +300,9 @@ class _LocationDetailsPageState extends State<LocationDetailsPage> {
         title: Text(widget.locatie.nume),
         actions: [
           IconButton(
+            tooltip: esteFavorita
+                ? 'Elimină din favorite'
+                : 'Adaugă la favorite',
             icon: Icon(
               esteFavorita ? Icons.favorite : Icons.favorite_border,
               color: Colors.red,
@@ -253,68 +310,73 @@ class _LocationDetailsPageState extends State<LocationDetailsPage> {
             onPressed: toggleFavorita,
           ),
 
-          IconButton(
-            icon: const Icon(Icons.edit),
-            onPressed: () async {
-              final updated = await Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => EditLocationPage(locatie: widget.locatie),
-                ),
-              );
+          StreamBuilder<bool>(
+            stream: _rolService.urmaresteRolAdmin(),
+            initialData: false,
+            builder: (context, snapshot) {
+              final esteAdmin = snapshot.data ?? false;
 
-              if (updated == true && context.mounted) {
-                Navigator.pushReplacement(
-                  context,
-                  MaterialPageRoute(
-                    builder: (_) => FutureBuilder<SablonLocatie?>(
-                      future: LocatieService().getLocatie(widget.locatie.id),
-                      builder: (context, snapshot) {
-                        if (!snapshot.hasData) {
-                          return const Scaffold(
-                            body: Center(child: CircularProgressIndicator()),
+              if (!esteAdmin) {
+                return const SizedBox.shrink();
+              }
+
+              return Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  IconButton(
+                    tooltip: 'Editează locația',
+                    icon: const Icon(Icons.edit),
+                    onPressed: () async {
+                      final esteIncaAdmin = await _rolService.esteAdmin();
+
+                      if (!context.mounted) return;
+
+                      if (!esteIncaAdmin) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text(
+                              'Nu ai permisiunea să editezi locații.',
+                            ),
+                          ),
+                        );
+                        return;
+                      }
+
+                      final updated = await Navigator.push<bool>(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) =>
+                              EditLocationPage(locatie: widget.locatie),
+                        ),
+                      );
+
+                      if (updated == true && context.mounted) {
+                        final locatieActualizata = await LocatieService()
+                            .getLocatie(widget.locatie.id);
+
+                        if (!context.mounted) return;
+
+                        if (locatieActualizata != null) {
+                          Navigator.pushReplacement(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => LocationDetailsPage(
+                                locatie: locatieActualizata,
+                              ),
+                            ),
                           );
                         }
-
-                        return LocationDetailsPage(locatie: snapshot.data!);
-                      },
-                    ),
+                      }
+                    },
                   ),
-                );
-              }
-            },
-          ),
 
-          IconButton(
-            icon: const Icon(Icons.delete),
-            onPressed: () async {
-              final confirm = await showDialog<bool>(
-                context: context,
-                builder: (context) => AlertDialog(
-                  title: const Text('Ștergere locație'),
-                  content: const Text(
-                    'Sigur dorești să ștergi această locație?',
+                  IconButton(
+                    tooltip: 'Șterge locația',
+                    icon: const Icon(Icons.delete, color: Colors.red),
+                    onPressed: _stergeLocatia,
                   ),
-                  actions: [
-                    TextButton(
-                      onPressed: () => Navigator.pop(context, false),
-                      child: const Text('Anulează'),
-                    ),
-                    ElevatedButton(
-                      onPressed: () => Navigator.pop(context, true),
-                      child: const Text('Șterge'),
-                    ),
-                  ],
-                ),
+                ],
               );
-
-              if (confirm == true) {
-                await LocatieService().deleteLocatie(widget.locatie.id);
-
-                if (!context.mounted) return;
-
-                Navigator.pop(context, true);
-              }
             },
           ),
         ],
