@@ -1,9 +1,11 @@
 const {onCall, HttpsError} = require("firebase-functions/v2/https");
+const {onDocumentCreated} = require("firebase-functions/v2/firestore");
 const {defineSecret} = require("firebase-functions/params");
 const logger = require("firebase-functions/logger");
 
 const {initializeApp} = require("firebase-admin/app");
 const {getFirestore} = require("firebase-admin/firestore");
+const {getMessaging} = require("firebase-admin/messaging");
 
 initializeApp();
 
@@ -773,5 +775,120 @@ Nu inventa orașe, județe sau categorii.
           }).`,
         );
       }
+    },
+  );
+  exports.trimitePushNotificare = onDocumentCreated(
+    {
+      region: "europe-west1",
+      document: "utilizatori/{userId}/notificari/{notificareId}",
+      timeoutSeconds: 60,
+      memory: "256MiB",
+      maxInstances: 10,
+    },
+    async (event) => {
+      const userId = event.params.userId;
+      const notificareId = event.params.notificareId;
+
+      const notificare = event.data?.data();
+
+      if (!notificare) {
+        logger.info("Notificarea nu există.");
+        return;
+      }
+
+      const titlu = notificare.titlu?.toString() || "TourMate";
+      const mesaj =
+        notificare.mesaj?.toString() || "Ai o notificare nouă.";
+      const tip = notificare.tip?.toString() || "";
+      const referintaId = notificare.referintaId?.toString() || "";
+
+      const tokensSnapshot = await db
+        .collection("utilizatori")
+        .doc(userId)
+        .collection("fcmTokens")
+        .get();
+
+      if (tokensSnapshot.empty) {
+        logger.info("Utilizatorul nu are tokenuri FCM.", {
+          userId,
+        });
+        return;
+      }
+
+      const tokenDocs = tokensSnapshot.docs
+        .map((document) => {
+          return {
+            ref: document.ref,
+            token: document.data().token,
+          };
+        })
+        .filter((element) => {
+          return typeof element.token === "string" &&
+            element.token.trim().length > 0;
+        });
+
+      if (tokenDocs.length === 0) {
+        logger.info("Nu există tokenuri FCM valide.", {
+          userId,
+        });
+        return;
+      }
+
+      const stergeriTokenuri = [];
+
+      for (let i = 0; i < tokenDocs.length; i += 500) {
+        const grup = tokenDocs.slice(i, i + 500);
+
+        const mesaje = grup.map((element) => {
+          return {
+            token: element.token,
+            notification: {
+              title: titlu,
+              body: mesaj,
+            },
+            data: {
+              notificareId,
+              tip,
+              referintaId,
+            },
+            android: {
+              priority: "high",
+              notification: {
+                sound: "default",
+              },
+            },
+          };
+        });
+
+        const raspuns = await getMessaging().sendEach(mesaje);
+
+        raspuns.responses.forEach((rezultat, index) => {
+          if (rezultat.success) {
+            return;
+          }
+
+          const codEroare = rezultat.error?.code;
+
+          logger.error("Eroare la trimiterea push FCM.", {
+            codEroare,
+            userId,
+            notificareId,
+          });
+
+          if (
+            codEroare === "messaging/registration-token-not-registered" ||
+            codEroare === "messaging/invalid-registration-token"
+          ) {
+            stergeriTokenuri.push(grup[index].ref.delete());
+          }
+        });
+      }
+
+      await Promise.all(stergeriTokenuri);
+
+      logger.info("Push notificare procesată.", {
+        userId,
+        notificareId,
+      });
     },
   );
