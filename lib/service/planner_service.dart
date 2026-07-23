@@ -27,7 +27,11 @@ class PlannerService {
       'locatii': locatii,
     });
 
-    await GamificationService().adaugaPuncte(5);
+    await GamificationService().adaugaPuncte(
+      5,
+      motiv: 'crearea unei planificări de vacanță',
+      tip: 'planner',
+    );
   }
 
   Stream<List<PlannerSablon>> getMyPlanners() {
@@ -144,7 +148,12 @@ class PlannerService {
       'detaliiItinerarAi': itinerar.toMap(),
     });
 
-    await GamificationService().adaugaPuncte(5);
+    await GamificationService().adaugaPuncte(
+      5,
+      motiv: 'salvarea unui itinerar generat cu AI',
+      tip: 'itinerar_ai',
+      referintaId: document.id,
+    );
 
     return document.id;
   }
