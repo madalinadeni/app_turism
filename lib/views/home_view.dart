@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'tabs/ExploreTab.dart';
-import 'tabs/HomePageTab.dart';
-import 'tabs/ProfileTab.dart';
+import 'tabs/home_page_tab.dart';
+import 'tabs/profile_tab.dart';
 import 'tabs/FavoritesTab.dart';
 import '../service/locatie_service.dart';
 
