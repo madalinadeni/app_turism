@@ -3,7 +3,7 @@
 # TourMate – Aplicație mobilă pentru promovarea obiectivelor turistice din România
 
 **Versiune:** 1.0
-**Ultima actualizare:** 
+**Ultima actualizare:**  23 iulie 2026
 **Stadiu:** Proiect de licență
 
 ## 1. Rezumat executiv
